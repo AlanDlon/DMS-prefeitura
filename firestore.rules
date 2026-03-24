@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: documentos
+    // Document ID: auto-generated
+    // Fields:
+    //   - id_unico: string (required)
+    //   - titulo: string (required, max 200 chars)
+    //   - data_emissao: string (ISO date)
+    //   - data_upload: string (ISO datetime)
+    //   - tipo_documento: string (required)
+    //   - secretaria_origem: string (required)
+    //   - status: string (required, enum: processando, concluido, erro)
+    //   - arquivo_url: string (required)
+    //   - conteudo_ocr: string (optional)
+    //   - snippet: string (optional)
+    //   - uid: string (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isValidDocument(data) {
+      return data.titulo is string && data.titulo.size() > 0 && data.titulo.size() <= 200 &&
+             data.tipo_documento is string &&
+             data.secretaria_origem is string &&
+             data.status in ['processando', 'concluido', 'erro'] &&
+             data.uid == request.auth.uid &&
+             (!('pasta_id' in data) || data.pasta_id is string);
+    }
+
+    function isValidPasta(data) {
+      return data.nome is string && data.nome.size() > 0 && data.nome.size() <= 100 &&
+             data.uid == request.auth.uid &&
+             (!('parent_id' in data) || data.parent_id is string);
+    }
+
+    function isValidScanSnapConfig(data) {
+      return data.uid == request.auth.uid &&
+             data.is_connected is bool;
+    }
+
+    match /documentos/{docId} {
+      // Qualquer usuário autenticado pode pesquisar documentos
+      allow read: if isAuthenticated();
+      
+      // Apenas o dono pode criar ou atualizar seus documentos
+      allow create: if isAuthenticated() && isValidDocument(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidDocument(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /pastas/{pastaId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPasta(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(resource.data.uid) && isValidPasta(request.resource.data);
+      allow delete: if isAuthenticated() && isOwner(resource.data.uid);
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /scansnap_configs/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidScanSnapConfig(request.resource.data);
+      allow update: if isOwner(userId) && isValidScanSnapConfig(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+  }
+}

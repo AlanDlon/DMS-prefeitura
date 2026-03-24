@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "documento": {
+      "title": "Documento",
+      "description": "Metadados e conteúdo OCR de um documento digitalizado",
+      "type": "object",
+      "properties": {
+        "id_unico": { "type": "string", "description": "ID único do documento" },
+        "titulo": { "type": "string", "description": "Título do documento" },
+        "data_emissao": { "type": "string", "format": "date", "description": "Data de emissão do documento" },
+        "data_upload": { "type": "string", "format": "date-time", "description": "Data em que o upload foi realizado" },
+        "tipo_documento": { "type": "string", "description": "Tipo do documento (Portaria, Decreto, etc)" },
+        "secretaria_origem": { "type": "string", "description": "Secretaria responsável" },
+        "status": { "type": "string", "enum": ["processando", "concluido", "erro"], "description": "Status do processamento OCR" },
+        "arquivo_url": { "type": "string", "description": "URL para acesso ao arquivo físico" },
+        "conteudo_ocr": { "type": "string", "description": "Texto completo extraído via OCR" },
+        "snippet": { "type": "string", "description": "Trecho relevante para exibição na busca" },
+        "uid": { "type": "string", "description": "ID do usuário que fez o upload" },
+        "pasta_id": { "type": "string", "description": "ID da pasta à qual o documento pertence (opcional)" }
+      },
+      "required": ["titulo", "tipo_documento", "secretaria_origem", "status", "uid"]
+    },
+    "pasta": {
+      "title": "Pasta",
+      "description": "Agrupamento lógico de documentos (suporta hierarquia)",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string", "description": "Nome da pasta" },
+        "uid": { "type": "string", "description": "ID do usuário dono da pasta" },
+        "parent_id": { "type": "string", "description": "ID da pasta pai (opcional, para subpastas)" },
+        "data_criacao": { "type": "string", "format": "date-time", "description": "Data de criação" }
+      },
+      "required": ["nome", "uid"]
+    },
+    "scansnap_config": {
+      "title": "ScanSnap Config",
+      "description": "Configurações e tokens de acesso ao ScanSnap Cloud",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "ID do usuário" },
+        "access_token": { "type": "string", "description": "Token de acesso OAuth" },
+        "refresh_token": { "type": "string", "description": "Token de renovação OAuth" },
+        "expires_at": { "type": "number", "description": "Timestamp de expiração do token" },
+        "is_connected": { "type": "boolean", "description": "Se o ScanSnap está conectado" }
+      },
+      "required": ["uid", "is_connected"]
+    }
+  },
+  "firestore": {
+    "/documentos/{docId}": {
+      "schema": "documento",
+      "description": "Coleção principal de documentos digitalizados"
+    },
+    "/scansnap_configs/{uid}": {
+      "schema": "scansnap_config",
+      "description": "Configurações de integração ScanSnap por usuário"
+    }
+  }
+}
