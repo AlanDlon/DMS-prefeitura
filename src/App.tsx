@@ -491,7 +491,16 @@ function DMSApp() {
         body: formData
       });
       
-      if (!uploadResponse.ok) throw new Error("Falha no upload do arquivo físico");
+      if (!uploadResponse.ok) {
+        let errorMsg = "Falha no upload do arquivo físico";
+        try {
+          const errorData = await uploadResponse.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (e) {
+          errorMsg += ` (${uploadResponse.status} ${uploadResponse.statusText})`;
+        }
+        throw new Error(`Falha no upload: ${errorMsg}`);
+      }
       const { filePath } = await uploadResponse.json();
 
       // 2. Perform OCR using Gemini on the frontend
@@ -571,8 +580,8 @@ function DMSApp() {
       console.error("Erro no upload/OCR:", error);
       let errorMessage = "Erro ao processar documento.";
       
-      if (error.message?.includes("Falha no upload")) {
-        errorMessage = "Falha ao enviar o arquivo para o servidor.";
+      if (error.message?.startsWith("Falha no upload:")) {
+        errorMessage = error.message;
       } else if (error.message?.includes("permission")) {
         errorMessage = "Erro de permissão ao salvar no banco de dados.";
       } else if (error.message) {
