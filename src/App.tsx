@@ -188,6 +188,7 @@ function DMSApp() {
   const [isCreatingPasta, setIsCreatingPasta] = useState(false);
   const [newPastaName, setNewPastaName] = useState("");
   const [pastaToDelete, setPastaToDelete] = useState<string | null>(null);
+  const [docToDelete, setDocToDelete] = useState<string | null>(null);
   const [creatingSubPastaForId, setCreatingSubPastaForId] = useState<string | null>(null);
   const [selectedDocForPreview, setSelectedDocForPreview] = useState<Documento | null>(null);
 
@@ -389,6 +390,18 @@ function DMSApp() {
     }
   };
 
+  const handleDeleteDocument = async (docId: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'documentos', docId));
+      setDocToDelete(null);
+      handleSearch();
+    } catch (error: any) {
+      handleFirestoreError(error, OperationType.DELETE, 'documentos');
+      setDocToDelete(null);
+    }
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadForm.file || !user) return;
@@ -422,9 +435,11 @@ function DMSApp() {
       const base64Data = await base64Promise;
 
       // Initialize Gemini right before use
-      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
-      if (!apiKey && !hasApiKey) {
-        setUploadStatus({ type: 'error', message: "Chave de API não configurada. Por favor, selecione uma chave." });
+      const rawApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+      const apiKey = rawApiKey === "undefined" ? "" : rawApiKey;
+      
+      if (!apiKey) {
+        setUploadStatus({ type: 'error', message: "Chave de API não configurada. Por favor, verifique as configurações do sistema." });
         setIsUploading(false);
         return;
       }
@@ -432,14 +447,12 @@ function DMSApp() {
       const ai = new GoogleGenAI({ apiKey });
       const ocrResponse = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: [
-          {
-            parts: [
-              { text: "Extraia todo o texto deste documento PDF digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica." },
-              { inlineData: { data: base64Data, mimeType: "application/pdf" } }
-            ]
-          }
-        ]
+        contents: {
+          parts: [
+            { text: "Extraia todo o texto deste documento PDF digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica." },
+            { inlineData: { data: base64Data, mimeType: "application/pdf" } }
+          ]
+        }
       });
 
       const extractedText = ocrResponse.text || "";
@@ -1088,7 +1101,42 @@ function DMSApp() {
                     </div>
                   )}
 
-                  <div className="mt-4 flex justify-end gap-4">
+                  <div className="mt-4 flex justify-end gap-4 items-center">
+                    {docToDelete === doc.id ? (
+                      <div className="flex items-center gap-2 bg-red-50 px-3 py-1.5 rounded-xl border border-red-100 animate-in fade-in slide-in-from-right-2">
+                        <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Confirmar exclusão?</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteDocument(doc.id);
+                          }}
+                          className="bg-red-600 text-white text-[10px] px-2.5 py-1 rounded-lg font-bold hover:bg-red-700 transition-colors"
+                        >
+                          Sim
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDocToDelete(null);
+                          }}
+                          className="text-gray-500 text-[10px] px-2 py-1 rounded-lg font-bold hover:bg-gray-200 transition-colors"
+                        >
+                          Não
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDocToDelete(doc.id);
+                        }}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Excluir Documento"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <div className="flex-1" />
                     <button 
                       onClick={() => setSelectedDocForPreview(doc)}
                       className="text-sm font-bold text-blue-600 hover:underline flex items-center gap-1"
