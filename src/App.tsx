@@ -224,9 +224,12 @@ function DMSApp() {
   // Fetch Pastas
   useEffect(() => {
     if (isAuthReady && user) {
-      const q = query(collection(db, 'pastas'), where('uid', '==', user.uid), orderBy('data_criacao', 'desc'));
+      // Remove UID filter to make it a shared system
+      const q = query(collection(db, 'pastas'));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const pastasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pasta));
+        // Sort in memory to avoid index requirement
+        pastasData.sort((a, b) => new Date(b.data_criacao).getTime() - new Date(a.data_criacao).getTime());
         setPastas(pastasData);
       }, (error) => {
         handleFirestoreError(error, OperationType.LIST, 'pastas');
@@ -288,7 +291,9 @@ function DMSApp() {
     setIsSearching(true);
     const path = 'documentos';
     try {
-      let q = query(collection(db, path), where("uid", "==", user.uid), orderBy("data_upload", "desc"));
+      // Use a simpler query to avoid composite index requirements
+      // Remove UID filter to make it a shared system
+      let q = query(collection(db, path));
 
       if (selectedPastaId) {
         q = query(q, where("pasta_id", "==", selectedPastaId));
@@ -305,6 +310,13 @@ function DMSApp() {
         id: doc.id,
         ...doc.data()
       })) as Documento[];
+
+      // Sort in memory to avoid index requirement
+      docs.sort((a, b) => {
+        const dateA = a.data_upload ? new Date(a.data_upload).getTime() : 0;
+        const dateB = b.data_upload ? new Date(b.data_upload).getTime() : 0;
+        return dateB - dateA;
+      });
 
       // Client-side filtering for text search
       const filteredDocs = docs.filter(doc => {
