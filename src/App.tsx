@@ -23,7 +23,8 @@ import {
   doc,
   getDoc,
   setDoc,
-  deleteDoc
+  deleteDoc,
+  updateDoc
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
@@ -143,6 +144,7 @@ interface Documento {
   arquivo_url: string;
   snippet?: string;
   conteudo_ocr?: string;
+  mime_type?: string;
   uid: string;
   pasta_id?: string;
 }
@@ -189,6 +191,7 @@ function DMSApp() {
   const [newPastaName, setNewPastaName] = useState("");
   const [pastaToDelete, setPastaToDelete] = useState<string | null>(null);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
+  const [retryingDocId, setRetryingDocId] = useState<string | null>(null);
   const [creatingSubPastaForId, setCreatingSubPastaForId] = useState<string | null>(null);
   const [selectedDocForPreview, setSelectedDocForPreview] = useState<Documento | null>(null);
 
@@ -390,6 +393,75 @@ function DMSApp() {
     }
   };
 
+  const handleRetryOCR = async (docObj: Documento) => {
+    if (!docObj.arquivo_url || !user) return;
+    
+    setRetryingDocId(docObj.id);
+    setUploadStatus({ type: 'success', message: "Reiniciando processamento OCR..." });
+
+    try {
+      // 1. Fetch the file from the server
+      const response = await fetch(docObj.arquivo_url);
+      if (!response.ok) throw new Error("Não foi possível acessar o arquivo original.");
+      const blob = await response.blob();
+      
+      // 2. Convert to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+        reader.readAsDataURL(blob);
+      });
+
+      const base64Data = await base64Promise;
+      const fileMimeType = docObj.mime_type || blob.type || "application/pdf";
+
+      // 3. Perform OCR using Gemini
+      const rawApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+      const apiKey = rawApiKey === "undefined" ? "" : rawApiKey;
+      
+      if (!apiKey) {
+        throw new Error("Chave de API não configurada.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      let extractedText = "";
+      
+      const ocrResponse = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          parts: [
+            { text: "Extraia todo o texto deste documento digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica. Responda apenas com o texto extraído." },
+            { inlineData: { data: base64Data, mimeType: fileMimeType } }
+          ]
+        }
+      });
+      
+      if (!ocrResponse || !ocrResponse.candidates || ocrResponse.candidates.length === 0) {
+        throw new Error("A API do Gemini não retornou nenhum resultado.");
+      }
+      
+      extractedText = ocrResponse.text || "Nenhum texto pôde ser extraído do documento.";
+
+      // 4. Update Firestore
+      const docRef = doc(db, 'documentos', docObj.id);
+      await updateDoc(docRef, {
+        conteudo_ocr: extractedText,
+        status: "concluido"
+      });
+
+      setUploadStatus({ type: 'success', message: "OCR reprocessado com sucesso!" });
+      handleSearch();
+    } catch (error: any) {
+      console.error("Erro no reprocessamento OCR:", error);
+      setUploadStatus({ type: 'error', message: `Falha no reprocessamento: ${error.message}` });
+    } finally {
+      setRetryingDocId(null);
+    }
+  };
+
   const handleDeleteDocument = async (docId: string) => {
     if (!user) return;
     try {
@@ -453,16 +525,27 @@ function DMSApp() {
           model: "gemini-3-flash-preview",
           contents: {
             parts: [
-              { text: "Extraia todo o texto deste documento digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica." },
+              { text: "Extraia todo o texto deste documento digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica. Responda apenas com o texto extraído." },
               { inlineData: { data: base64Data, mimeType: fileMimeType } }
             ]
           }
         });
-        extractedText = ocrResponse.text || "";
+        
+        if (!ocrResponse || !ocrResponse.candidates || ocrResponse.candidates.length === 0) {
+          throw new Error("A API do Gemini não retornou nenhum resultado.");
+        }
+        
+        extractedText = ocrResponse.text || "Nenhum texto pôde ser extraído do documento.";
       } catch (ocrError: any) {
         console.error("Erro na API do Gemini:", ocrError);
-        // If OCR fails, we still want to save the document but with a warning or empty text
-        extractedText = "[Erro no processamento OCR: " + (ocrError.message || "Erro desconhecido") + "]";
+        // If OCR fails, we still want to save the document but with a warning
+        let ocrErrorMessage = ocrError.message || "Erro desconhecido no processamento OCR";
+        if (ocrErrorMessage.includes("API key not valid")) {
+          ocrErrorMessage = "Chave de API inválida ou expirada.";
+        } else if (ocrErrorMessage.includes("quota")) {
+          ocrErrorMessage = "Cota da API excedida. Tente novamente mais tarde.";
+        }
+        extractedText = "[Erro no processamento OCR: " + ocrErrorMessage + "]";
       }
 
       // 3. Save metadata to Firestore
@@ -477,6 +560,7 @@ function DMSApp() {
         status: "concluido",
         arquivo_url: filePath,
         conteudo_ocr: extractedText,
+        mime_type: fileMimeType,
         uid: user.uid
       });
 
@@ -491,6 +575,8 @@ function DMSApp() {
         errorMessage = "Falha ao enviar o arquivo para o servidor.";
       } else if (error.message?.includes("permission")) {
         errorMessage = "Erro de permissão ao salvar no banco de dados.";
+      } else if (error.message) {
+        errorMessage = `Erro: ${error.message}`;
       }
       
       setUploadStatus({ type: 'error', message: errorMessage });
@@ -1117,8 +1203,34 @@ function DMSApp() {
                     </div>
                   )}
 
-                  <div className="mt-4 flex justify-end gap-4 items-center">
-                    {docToDelete === doc.id ? (
+                  <div className="mt-4 flex justify-between items-center bg-gray-50/50 p-3 rounded-xl border border-gray-100">
+                    <div className="flex items-center gap-2">
+                      {doc.conteudo_ocr?.startsWith("[Erro no processamento OCR:") ? (
+                        <div className="flex items-center gap-2 text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100 text-xs font-medium">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>OCR falhou</span>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRetryOCR(doc);
+                            }}
+                            disabled={retryingDocId === doc.id}
+                            className="ml-2 bg-amber-600 text-white px-3 py-1 rounded-md font-bold hover:bg-amber-700 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {retryingDocId === doc.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}
+                            Tentar Novamente
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-green-700 bg-green-50 px-3 py-1.5 rounded-lg border border-green-100 text-xs font-medium">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>OCR Concluído</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex justify-end gap-4 items-center">
+                      {docToDelete === doc.id ? (
                       <div className="flex items-center gap-2 bg-red-50 px-3 py-1.5 rounded-xl border border-red-100 animate-in fade-in slide-in-from-right-2">
                         <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Confirmar exclusão?</span>
                         <button 
@@ -1168,7 +1280,8 @@ function DMSApp() {
                       Abrir Original
                     </a>
                   </div>
-                </motion.div>
+                </div>
+              </motion.div>
               ))}
             </AnimatePresence>
 
