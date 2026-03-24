@@ -1,3 +1,6 @@
+import fs from "fs";
+fs.writeFileSync("server-load.log", "SERVER.TS IS LOADING at " + new Date().toISOString());
+
 import express from "express";
 import multer from "multer";
 import cors from "cors";
@@ -23,8 +26,11 @@ async function startServer() {
     app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
     // 2. Request Logger
+    const logFile = path.join(process.cwd(), "requests.log");
     app.use((req, res, next) => {
-      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+      const logEntry = `[${new Date().toISOString()}] ${req.method} ${req.url} (Headers: ${JSON.stringify(req.headers)})\n`;
+      fs.appendFileSync(logFile, logEntry);
+      console.log(logEntry);
       next();
     });
 
@@ -90,6 +96,12 @@ async function startServer() {
       res.send("<html><body><h2>Conectado!</h2><script>setTimeout(()=>window.close(),2000)</script></body></html>");
     });
 
+    // 6. Start Listening (BEFORE Vite to avoid blocking)
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`\n>>> DMS Server is running on port ${PORT} <<<`);
+      console.log(`>>> Health check: http://localhost:${PORT}/api/ping <<<\n`);
+    });
+
     // 5. Vite or Static Production Files
     if (process.env.NODE_ENV === "production") {
       const distPath = path.join(process.cwd(), "dist");
@@ -102,18 +114,20 @@ async function startServer() {
         app.use(vite.middlewares);
       }
     } else {
-      const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+      console.log("Initializing Vite middleware...");
+      const vite = await createViteServer({ 
+        server: { middlewareMode: true }, 
+        appType: "spa",
+        root: process.cwd()
+      });
       app.use(vite.middlewares);
+      console.log("Vite middleware ready.");
     }
 
-    // 6. Start Listening
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`\n>>> DMS Server is running on port ${PORT} <<<`);
-      console.log(`>>> Health check: http://localhost:${PORT}/api/ping <<<\n`);
-    });
-
-  } catch (error) {
-    console.error("FATAL ERROR DURING SERVER STARTUP:", error);
+  } catch (error: any) {
+    const errorMsg = `FATAL ERROR [${new Date().toISOString()}]:\n${error.stack || error.message}`;
+    fs.writeFileSync("server-error.log", errorMsg);
+    console.error(errorMsg);
     process.exit(1);
   }
 }
