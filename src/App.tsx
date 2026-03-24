@@ -169,6 +169,7 @@ function DMSApp() {
   const [isManualConnecting, setIsManualConnecting] = useState(false);
   const [manualScannerId, setManualScannerId] = useState("");
   const [hasApiKey, setHasApiKey] = useState(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [pastaError, setPastaError] = useState<string | null>(null);
 
@@ -253,11 +254,19 @@ function DMSApp() {
   }, [isAuthReady, user]);
 
   const handleLogin = async () => {
+    setLoginError(null);
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro no login:", error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError("O popup de login foi bloqueado pelo navegador. Por favor, permita popups para este site.");
+      } else if (error.code === 'auth/unauthorized-domain') {
+        setLoginError("Este domínio não está autorizado para login no Firebase. Por favor, verifique as configurações do console do Firebase.");
+      } else {
+        setLoginError(`Erro ao entrar com Google: ${error.message}`);
+      }
     }
   };
 
@@ -516,6 +525,17 @@ function DMSApp() {
             <LogIn className="w-5 h-5 text-blue-600" />
             Entrar com Google
           </button>
+
+          {loginError && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-left"
+            >
+              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              <p className="text-xs text-red-700 font-medium leading-relaxed">{loginError}</p>
+            </motion.div>
+          )}
         </div>
       </div>
     );
