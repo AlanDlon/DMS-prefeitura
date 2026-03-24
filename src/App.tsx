@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState, useEffect } from "react";
-import { Upload, Search, FileText, Filter, Loader2, CheckCircle, AlertCircle, Calendar, Building2, LogIn, LogOut, User, Printer, Smartphone, Folder, FolderPlus, ChevronRight, MoreVertical, Trash2, X } from "lucide-react";
+import { Upload, Search, FileText, Filter, Loader2, CheckCircle, AlertCircle, Calendar, Building2, LogIn, LogOut, User, Printer, Smartphone, Folder, FolderPlus, ChevronRight, MoreVertical, Trash2, X, Activity } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -664,6 +664,21 @@ function DMSApp() {
           </div>
           
           <div className="flex items-center gap-6">
+            <button 
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/ping");
+                  const data = await res.json();
+                  alert(`API Status: ${data.status}\nMessage: ${data.message}\nTime: ${data.timestamp}`);
+                } catch (e: any) {
+                  alert(`API Error: ${e.message}`);
+                }
+              }}
+              className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+              title="Testar Conexão com API"
+            >
+              <Activity className="w-5 h-5" />
+            </button>
             <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-full border border-gray-100">
               {user.photoURL ? (
                 <img src={user.photoURL} alt={user.displayName || ""} className="w-8 h-8 rounded-full border border-white shadow-sm" referrerPolicy="no-referrer" />
