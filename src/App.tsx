@@ -133,9 +133,10 @@ class ErrorBoundary extends React.Component<any, any> {
 
 interface Documento {
   id: string;
-  id_unico: string;
+  id_unico?: string;
   titulo: string;
   data_emissao: string;
+  data_upload: string;
   tipo_documento: string;
   secretaria_origem: string;
   status: string;
@@ -635,9 +636,9 @@ function DMSApp() {
                     .map(pasta => (
                       <div key={pasta.id} className="space-y-1">
                         <div className="group relative" style={{ marginLeft: `${level * 12}px` }}>
-                          <button 
+                          <div 
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ${selectedPastaId === pasta.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
                             onClick={() => setSelectedPastaId(pasta.id)}
-                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all ${selectedPastaId === pasta.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
                           >
                             <div className="flex items-center gap-2 overflow-hidden">
                               <Folder className="w-4 h-4 shrink-0" />
@@ -666,7 +667,7 @@ function DMSApp() {
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
-                          </button>
+                          </div>
 
                           {pastaToDelete === pasta.id && (
                             <div className="absolute inset-0 bg-white/95 flex items-center justify-center gap-2 z-10 rounded-xl px-2">
