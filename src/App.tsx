@@ -155,7 +155,7 @@ interface Pasta {
 }
 
 function DMSApp() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<FirebaseUser | any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [secretaria, setSecretaria] = useState("");
@@ -172,6 +172,14 @@ function DMSApp() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [pastaError, setPastaError] = useState<string | null>(null);
+
+  // Default user for no-login mode
+  const DEFAULT_USER = {
+    uid: "public-access",
+    displayName: "Usuário Administrativo",
+    email: "admin@prefeitura.gov",
+    photoURL: null
+  };
 
   // Pastas
   const [pastas, setPastas] = useState<Pasta[]>([]);
@@ -192,27 +200,22 @@ function DMSApp() {
     file: null as File | null
   });
 
-  // Check for API Key
+  // Check for API Key - Disabled as per request
   useEffect(() => {
-    const checkKey = async () => {
-      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(hasKey);
-      }
-    };
-    checkKey();
+    setHasApiKey(true);
   }, []);
 
   const handleOpenKeyDialog = async () => {
-    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
-      await window.aistudio.openSelectKey();
-      setHasApiKey(true);
-    }
+    // Disabled
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser);
+      } else {
+        setUser(DEFAULT_USER);
+      }
       setIsAuthReady(true);
     });
     return () => unsubscribe();
@@ -501,42 +504,10 @@ function DMSApp() {
     }, 5000);
   };
 
-  if (!isAuthReady) {
+  if (!isAuthReady || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-md w-full text-center border border-gray-100">
-          <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-200">
-            <FileText className="text-white w-8 h-8" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">DMS Prefeitura</h1>
-          <p className="text-gray-500 mb-8">Gestão Inteligente de Documentos Digitalizados. Faça login para acessar o sistema.</p>
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-white border-2 border-gray-200 text-gray-700 py-4 rounded-2xl font-bold hover:bg-gray-50 transition-all flex items-center justify-center gap-3 shadow-sm active:scale-95"
-          >
-            <LogIn className="w-5 h-5 text-blue-600" />
-            Entrar com Google
-          </button>
-
-          {loginError && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl flex items-center gap-3 text-left"
-            >
-              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-              <p className="text-xs text-red-700 font-medium leading-relaxed">{loginError}</p>
-            </motion.div>
-          )}
-        </div>
       </div>
     );
   }
@@ -568,13 +539,15 @@ function DMSApp() {
                 <p className="text-xs font-bold text-gray-900 leading-none">{user.displayName}</p>
                 <p className="text-[10px] text-gray-500 mt-0.5">{user.email}</p>
               </div>
-              <button 
-                onClick={handleLogout}
-                className="p-1.5 hover:bg-red-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
-                title="Sair"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+              {user.uid !== "public-access" && (
+                <button 
+                  onClick={handleLogout}
+                  className="p-1.5 hover:bg-red-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
+                  title="Sair"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>
