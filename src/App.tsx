@@ -433,6 +433,7 @@ function DMSApp() {
       });
 
       const base64Data = await base64Promise;
+      const fileMimeType = uploadForm.file.type || "application/pdf";
 
       // Initialize Gemini right before use
       const rawApiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
@@ -445,17 +446,24 @@ function DMSApp() {
       }
 
       const ai = new GoogleGenAI({ apiKey });
-      const ocrResponse = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            { text: "Extraia todo o texto deste documento PDF digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica." },
-            { inlineData: { data: base64Data, mimeType: "application/pdf" } }
-          ]
-        }
-      });
-
-      const extractedText = ocrResponse.text || "";
+      let extractedText = "";
+      
+      try {
+        const ocrResponse = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: {
+            parts: [
+              { text: "Extraia todo o texto deste documento digitalizado de forma fiel e completa. Se houver tabelas, tente manter a estrutura básica." },
+              { inlineData: { data: base64Data, mimeType: fileMimeType } }
+            ]
+          }
+        });
+        extractedText = ocrResponse.text || "";
+      } catch (ocrError: any) {
+        console.error("Erro na API do Gemini:", ocrError);
+        // If OCR fails, we still want to save the document but with a warning or empty text
+        extractedText = "[Erro no processamento OCR: " + (ocrError.message || "Erro desconhecido") + "]";
+      }
 
       // 3. Save metadata to Firestore
       const path = 'documentos';
@@ -475,9 +483,17 @@ function DMSApp() {
       setUploadStatus({ type: 'success', message: "Documento processado e salvo com sucesso!" });
       setUploadForm({ titulo: "", data_emissao: "", tipo_documento: "Contrato", secretaria_origem: "Saúde", file: null });
       handleSearch();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro no upload/OCR:", error);
-      setUploadStatus({ type: 'error', message: "Erro ao processar documento." });
+      let errorMessage = "Erro ao processar documento.";
+      
+      if (error.message?.includes("Falha no upload")) {
+        errorMessage = "Falha ao enviar o arquivo para o servidor.";
+      } else if (error.message?.includes("permission")) {
+        errorMessage = "Erro de permissão ao salvar no banco de dados.";
+      }
+      
+      setUploadStatus({ type: 'error', message: errorMessage });
     } finally {
       setIsUploading(false);
     }
