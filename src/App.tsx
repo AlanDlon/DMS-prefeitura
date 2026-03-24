@@ -27,6 +27,15 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
+
 // --- Error Handling ---
 enum OperationType {
   CREATE = 'create',
@@ -159,6 +168,7 @@ function DMSApp() {
   const [isScanSnapConnected, setIsScanSnapConnected] = useState(false);
   const [isManualConnecting, setIsManualConnecting] = useState(false);
   const [manualScannerId, setManualScannerId] = useState("");
+  const [hasApiKey, setHasApiKey] = useState(true);
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [pastaError, setPastaError] = useState<string | null>(null);
 
@@ -181,8 +191,23 @@ function DMSApp() {
     file: null as File | null
   });
 
-  // Initialize Gemini
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  // Check for API Key
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(hasKey);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleOpenKeyDialog = async () => {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -371,6 +396,15 @@ function DMSApp() {
 
       const base64Data = await base64Promise;
 
+      // Initialize Gemini right before use
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+      if (!apiKey && !hasApiKey) {
+        setUploadStatus({ type: 'error', message: "Chave de API não configurada. Por favor, selecione uma chave." });
+        setIsUploading(false);
+        return;
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       const ocrResponse = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [
@@ -783,6 +817,24 @@ function DMSApp() {
               <Upload className="w-5 h-5 text-blue-600" />
               Novo Documento (Scan)
             </h2>
+
+            {!hasApiKey && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-xs text-amber-700 mb-3 font-medium">
+                  Para utilizar o OCR (reconhecimento de texto), é necessário configurar uma chave de API do Gemini.
+                </p>
+                <button 
+                  onClick={handleOpenKeyDialog}
+                  className="w-full bg-amber-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-amber-700 transition-all"
+                >
+                  Configurar Chave API
+                </button>
+                <p className="mt-2 text-[10px] text-amber-600 text-center">
+                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline">Saiba mais sobre faturamento</a>
+                </p>
+              </div>
+            )}
+
             <form onSubmit={handleUpload} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Título</label>
